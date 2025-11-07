@@ -6,6 +6,9 @@ Este repositorio contiene los recursos necesarios para probar el flujo de proces
 
  **`pedidos.xlsx`**  
   Archivo de ejemplo que permite probar el flujo en n8n.
+  
+ **`Crear_pedidos_db.sql`**  
+  Query para crear la base de datos pedidos_db
 
  **`api/`**  Contiene una pequeña API REST que permite gestionar pedidos:  
   - `GET /pedidos` → Retorna una lista de pedidos.  
