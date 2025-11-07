@@ -1,0 +1,201 @@
+{
+  "name": "Procesar pedidos",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 8-12 * * 1"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2192,
+        -272
+      ],
+      "id": "5f6fbaee-b652-4861-bc13-037557a3435d",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "convert to json",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 1,
+      "position": [
+        -1888,
+        -272
+      ],
+      "id": "2b9b2588-45ef-48d3-a196-38eb95c7109a"
+    },
+    {
+      "parameters": {
+        "fileSelector": "C:/Users/USER/Documents/Data/pedidos.xlsx",
+        "options": {}
+      },
+      "name": "Read Excel",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -2048,
+        -272
+      ],
+      "id": "ba35e27c-80dd-4280-9c55-a325f9024da9",
+      "alwaysOutputData": false,
+      "retryOnFail": false,
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "import unicodedata\nfrom datetime import datetime\n\npedidos = [item[\"json\"] for item in items]\n\ndef normalizar_texto(texto):\n    \"\"\"\n    Normaliza texto eliminando espacios, tildes y caracteres especiales.\n    Convierte todo a minúsculas.\n    \"\"\"\n    if not isinstance(texto, str):\n        return texto  # Si no es texto, lo devuelve igual\n    \n    texto = texto.strip().lower()\n    texto = unicodedata.normalize('NFD', texto)\n    texto = ''.join(c for c in texto if unicodedata.category(c) != 'Mn')\n    texto = ''.join(c for c in texto if c.isalnum() or c.isspace())\n    return texto\n\npedidos_normalizados = []\nfor p in pedidos:\n    pedido_normalizado = {k: normalizar_texto(v) for k, v in p.items()}\n    \n    pedido_normalizado[\"Audit_date\"] = datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")\n    \n    pedidos_normalizados.append({\"json\": pedido_normalizado})\n\nreturn pedidos_normalizados\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1744,
+        -272
+      ],
+      "id": "12cb2f5c-fc31-446f-a2d4-1dfd53d9540f",
+      "name": "transform data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nINSERT INTO clientes (nombre_cliente)\nVALUES ('{{ $json[\"Cliente\"] }}')\nON DUPLICATE KEY UPDATE id_cliente = LAST_INSERT_ID(id_cliente);\nSET @id_cliente = LAST_INSERT_ID();\n\nINSERT INTO productos (nombre_producto)\nVALUES ('{{ $json[\"Producto\"] }}')\nON DUPLICATE KEY UPDATE id_producto = LAST_INSERT_ID(id_producto);\nSET @id_producto = LAST_INSERT_ID();\n\nINSERT INTO ciudades (nombre_ciudad)\nVALUES ('{{ $json[\"Ciudad\"] }}')\nON DUPLICATE KEY UPDATE id_ciudad = LAST_INSERT_ID(id_ciudad);\nSET @id_ciudad = LAST_INSERT_ID();\n\nSET @fecha = STR_TO_DATE('{{ $json[\"Audit_date\"] }}', '%Y-%m-%d %H:%i:%s');\nSET @nombre_mes = MONTHNAME(@fecha);\nSET @anio = YEAR(@fecha);\n\nINSERT INTO meses (nombre_mes)\nVALUES (@nombre_mes)\nON DUPLICATE KEY UPDATE id_mes = LAST_INSERT_ID(id_mes);\nSET @id_mes = LAST_INSERT_ID();\n\nINSERT INTO anios (anio)\nVALUES (@anio)\nON DUPLICATE KEY UPDATE id_anio = LAST_INSERT_ID(id_anio);\nSET @id_anio = LAST_INSERT_ID();\n\nINSERT INTO pedidos (\n    id_cliente, id_producto, id_ciudad, id_mes, id_anio, cantidad, monto, audit_date\n)\nVALUES (\n    @id_cliente,\n    @id_producto,\n    @id_ciudad,\n    @id_mes,\n    @id_anio,\n    {{ $json[\"Cantidad\"] }},\n    {{ $json[\"Monto\"] }},\n    @fecha\n);\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -1504,
+        -192
+      ],
+      "id": "7700fbfe-baf7-4c92-a020-44b8fa5d7b90",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "zE3i2reSRlW8aunX",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "wp.javer@gmail.com",
+        "toEmail": "={{$json[\"email\"]}}",
+        "subject": "=Pedidos de {{$json[\"ciudad\"]}}",
+        "html": "=Los clientes de la ciudad de {{$json[\"ciudad\"]}} son:{{$json[\"detalle_pedidos\"]}}",
+        "options": {}
+      },
+      "name": "Email Send",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [
+        -1344,
+        -432
+      ],
+      "id": "8d34d5f4-e9a0-4571-9439-ed8c89ce7dcf",
+      "credentials": {
+        "smtp": {
+          "id": "2Mr3YbU5ODA5igEI",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "pedidos_normalizados = [item[\"json\"] for item in items]\n\ncorreos = [\n    {\"Ciudad\": \"Cali\", \"email\": \"wp.javer@gmail.com\"},\n    {\"Ciudad\": \"Medellin\", \"email\": \"wapluc2@gmail.com\"},\n    {\"Ciudad\": \"ibague\", \"email\": \"sanchez.javier@correounivalle.edu.co\"}\n]\n\noutputs = []\n\n\ndef formato_monto(monto):\n    return \"{:,.0f}\".format(monto)\n\nfor correo in correos:\n    ciudad = correo[\"Ciudad\"]\n    \n    # Filtro\n    pedidos_ciudad = [p for p in pedidos_normalizados if p[\"Ciudad\"].lower() == ciudad.lower()]\n    \n    if pedidos_ciudad:\n        tabla_html = \"\"\"\n        <table style=\"border-collapse: collapse; width: 100%; font-family: Arial, sans-serif;\">\n            <thead>\n                <tr style=\"background-color: #4CAF50; color: white; text-align: left;\">\n                    <th style=\"padding: 8px; border: 1px solid #ddd;\">Cliente</th>\n                    <th style=\"padding: 8px; border: 1px solid #ddd;\">Producto</th>\n                    <th style=\"padding: 8px; border: 1px solid #ddd;\">Cantidad</th>\n                    <th style=\"padding: 8px; border: 1px solid #ddd;\">Monto</th>\n                </tr>\n            </thead>\n            <tbody>\n        \"\"\"\n        for i, p in enumerate(pedidos_ciudad):\n            bg_color = \"#ffffff\" if i % 2 == 0 else \"#f9f9f9\"\n            tabla_html += f\"\"\"\n                <tr style=\"background-color: {bg_color};\">\n                    <td style=\"padding: 8px; border: 1px solid #ddd;\">{p['Cliente']}</td>\n                    <td style=\"padding: 8px; border: 1px solid #ddd;\">{p.get('Producto', '')}</td>\n                    <td style=\"padding: 8px; border: 1px solid #ddd;\">{p.get('Cantidad', '')}</td>\n                    <td style=\"padding: 8px; border: 1px solid #ddd;\">{formato_monto(p['Monto'])}</td>\n                </tr>\n            \"\"\"\n        tabla_html += \"</tbody></table>\"\n        \n        # Crear output para n8n\n        outputs.append({\n            \"json\": {\n                \"email\": correo[\"email\"],\n                \"ciudad\": ciudad,\n                \"detalle_pedidos\": tabla_html\n            }\n        })\n\nreturn outputs\n"
+      },
+      "name": "filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1504,
+        -432
+      ],
+      "id": "60e89c81-97a8-43ad-a14b-1646393be203"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "convert to json": {
+      "main": [
+        [
+          {
+            "node": "transform data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Excel": {
+      "main": [
+        [
+          {
+            "node": "convert to json",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "transform data": {
+      "main": [
+        [
+          {
+            "node": "filter",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "filter": {
+      "main": [
+        [
+          {
+            "node": "Email Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a83d41d1-d62e-4337-be06-a0b5531d9e3a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "5fe7230c68594a93eb2d4d63851e3bdbd3fb1aef6ba66c3825e9ec47015d3ea4"
+  },
+  "id": "rxVKSPLbPez6CAXr",
+  "tags": []
+}
